@@ -28,7 +28,6 @@ class RoofSolarPanel:
     def __init__(self,
                  V: np.ndarray,
                  F: List[List[int]],
-
                  panel_dx: float,
                  panel_dy: float,
                  max_panels: int,
@@ -37,7 +36,61 @@ class RoofSolarPanel:
                  b_scale_z: float = 0.5,
                  p_scale_x: float = 1.0,
                  p_scale_y: float = 1.0,
-                 grid_size: float = 15.0):
+                 grid_size: float = 15.0,
+                 exclude_face_indices: List[int] = None):  # New parameter
+
+        self.p_scale_x = p_scale_x
+        self.p_scale_y = p_scale_y
+        self.b_scale_x = b_scale_x
+        self.b_scale_y = b_scale_y
+        self.b_scale_z = b_scale_z
+        self.grid_size = grid_size
+
+        # Scale the vertices
+        self.V = self._scale_vertices(V)
+        self.F = F
+        self.triangular_F = self.triangulate_all_faces()
+
+        self.panel_dx = panel_dx * self.p_scale_x
+        self.panel_dy = panel_dy * self.p_scale_y
+        self.max_panels = max_panels
+
+        self.face_info = {}
+        self.panels = []
+
+        # Store excluded face indices
+        self.exclude_face_indices = exclude_face_indices if exclude_face_indices is not None else []
+
+        # FIRST: Identify and filter roof faces
+        original_roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
+        self.roof_faces = []
+        for face in original_roof_faces:
+            try:
+                idx = self.F.index(face)
+                if idx not in self.exclude_face_indices:
+                    self.roof_faces.append(face)
+            except ValueError:
+                continue
+
+        # SECOND: Generate mesh objects AFTER filtering
+        self.mesh_objects = self._generate_mesh()
+
+        # THIRD: Process meshes AFTER creation
+        self.flattened_meshes = []
+        for face_mesh in self.mesh_objects:
+            self.flattened_meshes.extend(face_mesh)
+
+        self.triangular_meshes = []
+        for mesh_idx, square in enumerate(self.flattened_meshes):
+            tri1 = [square[0], square[1], square[2]]
+            tri2 = [square[0], square[2], square[3]]
+            self.triangular_meshes.append({'mesh_idx': mesh_idx, 'triangle': tri1})
+            self.triangular_meshes.append({'mesh_idx': mesh_idx, 'triangle': tri2})
+
+    def _generate_mesh(self):
+        # Use self.roof_faces which already excludes the specified faces
+        self.mesh_objects = [self.process_face(face, self.grid_size) for face in self.roof_faces]
+        return self.mesh_objects
         """
         Initialize the roof model and planning parameters
 
@@ -50,7 +103,7 @@ class RoofSolarPanel:
             b_scale_x, b_scale_y, b_scale_z: Scaling factors for building dimensions
             p_scale_x, p_scale_y: Scaling factors for panel dimensions
             grid_size: Size to create the mesh grid   -- in decimeters? dm
-        """
+
         self.p_scale_x = p_scale_x
         self.p_scale_y = p_scale_y
         self.b_scale_x = b_scale_x
@@ -90,7 +143,15 @@ class RoofSolarPanel:
             self.triangular_meshes.append({'mesh_idx': mesh_idx, 'triangle': tri2})
 
         # Store the roof faces
-        self.roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
+        self.roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)         """
+
+
+    """
+    def _generate_mesh(self):
+        roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
+        self.mesh_objects = [self.process_face(face, self.grid_size) for face in roof_faces]
+        return self.mesh_objects """
+
 
     def plot_triangular_meshes(self):
         """
@@ -293,6 +354,7 @@ class RoofSolarPanel:
         u_min, u_max = min(u_coords), max(u_coords)
         v_min, v_max = min(v_coords), max(v_coords)
 
+        """
         squares = []
         current_u = u_min
         while current_u < u_max:
@@ -323,6 +385,56 @@ class RoofSolarPanel:
                     squares.append((current_u, current_v, square_u_end, square_v_end))
                 current_v += grid_size
             current_u += grid_size
+        """
+
+        squares = []
+        current_u = u_min
+        while current_u < u_max:
+            current_v = v_min
+            while current_v < v_max:
+                square_u_end = min(current_u + grid_size, u_max)
+                square_v_end = min(current_v + grid_size, v_max)
+
+                # Calculate actual dimensions of the square
+                u_length = square_u_end - current_u
+                v_length = square_v_end - current_v
+                # Define minimum allowed dimension (e.g., 10% of grid_size)
+                min_dimension = grid_size * 0.3  # Adjust this threshold as needed
+
+                # Skip squares that are too small in either dimension
+                if u_length < min_dimension or v_length < min_dimension:
+                    current_v += grid_size
+                    continue  # Skip this square
+
+                # Proceed with checking if points are inside the polygon
+                corners = [
+                    (current_u, current_v),
+                    (square_u_end, current_v),
+                    (square_u_end, square_v_end),
+                    (current_u, square_v_end)
+                ]
+                # ... rest of the code to check points ...
+
+                mid_top = ((current_u + square_u_end) / 2, current_v)
+                mid_bottom = ((current_u + square_u_end) / 2, square_v_end)
+                mid_left = (current_u, (current_v + square_v_end) / 2)
+                mid_right = (square_u_end, (current_v + square_v_end) / 2)
+                center = ((current_u + square_u_end) / 2, (current_v + square_v_end) / 2)
+                check_points = corners + [mid_top, mid_bottom, mid_left, mid_right, center]
+
+                all_inside = True
+                for (u, v) in check_points:
+                    if not self.point_in_polygon(u, v, uv_coords):
+                        all_inside = False
+                        break
+
+                if all_inside:
+                    squares.append((current_u, current_v, square_u_end, square_v_end))
+                current_v += grid_size
+            current_u += grid_size
+
+            # ... rest of the code ...
+
 
         mesh_squares = []
         for (start_u, start_v, end_u, end_v) in squares:
@@ -340,11 +452,12 @@ class RoofSolarPanel:
             mesh_squares.append(square_3d)
 
         return mesh_squares
-
+    """
     def _generate_mesh(self):
         roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
         self.mesh_objects = [self.process_face(face, self.grid_size) for face in roof_faces]
         return self.mesh_objects
+    """
 
     def plot_rooftops_with_mesh_points(self):
         """
@@ -494,8 +607,10 @@ class RoofSolarPanel:
 if __name__ == "__main__":
     # Load vertices and faces from a .polyshape file
     verts, faces = read_polyshape_3d.read_polyshape(
-        "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/BJ39_500_100047_0010.polyshape"
+        "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test2.txt"
     )
+
+    #BK39_500_012023_0006.polyshape
 
     roof = RoofSolarPanel(
         V= verts,
@@ -506,7 +621,8 @@ if __name__ == "__main__":
         b_scale_x=0.05,
         b_scale_y=0.05,
         b_scale_z=0.05,
-        grid_size= 1.0
+        grid_size= 1.0,
+        exclude_face_indices=[2]
     )
     #print(roof.V)
     #print(roof.F)
@@ -516,7 +632,7 @@ if __name__ == "__main__":
 
     # Display the building and rooftop seperately
     roof.display_building_and_rooftops()
-    #roof.display_building_and_rooftops_triangulated()
+    roof.display_building_and_rooftops_triangulated()
     # print(roof.triangular_F)
 
     # The mesh object of the rooftop
@@ -529,13 +645,13 @@ if __name__ == "__main__":
     roof.plot_rooftops_with_mesh_grid()
 
     # display the building with mesh grid
-    roof.plot_building_with_mesh_grid()
+    #roof.plot_building_with_mesh_grid()
 
     #print(roof.mesh_objects)
     #print(roof.roof_faces)
 
     # get the centroid of the ground floor
     # print(roof.get_ground_centroid())
-    #roof.plot_triangular_meshes()
+    roof.plot_triangular_meshes()
     #print(roof.triangular_meshes)
     #print(roof.get_ground_centroid())

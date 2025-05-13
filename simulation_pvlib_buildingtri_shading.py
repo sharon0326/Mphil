@@ -471,9 +471,136 @@ def final_results(raw_results, solar_meshes):
 
     return comprehensive_results
 
+
 # For the clarity of the main. To debug, see try.pvlib_shaded_simulation
 def create_3d_visualization(results_data):
-    """Generate 3D visualization of results"""
+    #Generate 3D visualization of results with mesh labels.
+    radiances = [mesh['average_radiance'] for mesh in results_data.values()]
+    norm = Normalize(vmin=min(radiances), vmax=max(radiances))
+    cmap = plt.cm.viridis
+
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot meshes with labels
+    for mesh_id, mesh in results_data.items():
+        # Plot the polygon
+        coords = np.array(mesh['original_coordinates'])
+        polygon = Poly3DCollection([coords], alpha=0.8)
+        polygon.set_facecolor(cmap(norm(mesh['average_radiance'])))
+        ax.add_collection3d(polygon)
+
+        """
+        # Add mesh number label at centroid
+        mesh_number = int(mesh_id.split('_')[1])  # Extract number from "Mesh_X"
+        centroid = mesh['centroid']
+        ax.text(
+            centroid[0], centroid[1], centroid[2],
+            str(mesh_number),
+            color='white',
+            fontsize=9,
+            ha='center',
+            va='center',
+            bbox=dict(
+                boxstyle="round",
+                facecolor='black',
+                alpha=0.7,
+                edgecolor='none'
+            ),
+            zorder=4  # Ensure labels stay on top
+        )
+        """
+
+    # Configure axes and colorbar
+    ax.set_xlabel('X Axis', fontsize=9)
+    ax.set_ylabel('Y Axis', fontsize=9)
+    ax.set_zlabel('Elevation', fontsize=9)
+    ax.grid(True)
+
+    # Add colorbar
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    cbar = plt.colorbar(sm, ax=ax, pad=0.1)
+    cbar.set_label('Average Radiance (W/m²)', fontsize=10)
+
+    # Set viewing angle
+    ax.view_init(elev=45, azim=-45)
+    plt.tight_layout()
+    plt.show()
+
+
+def create_3d_visualization_1(results_data, color_groups=None):
+    # Generate 3D visualization of results with mesh labels and optional color groups
+    radiances = [mesh['average_radiance'] for mesh in results_data.values()]
+    norm = Normalize(vmin=min(radiances), vmax=max(radiances))
+    cmap = plt.cm.viridis
+
+    # Handle color groups
+    mesh_to_group_color = {}
+    if color_groups is not None:
+        group_cmap = plt.cm.get_cmap('tab10')  # Using qualitative colormap for groups
+        for group_idx, group in enumerate(color_groups):
+            color = group_cmap(group_idx % group_cmap.N)  # Cycle colors if needed
+            for mesh_id in group:
+                mesh_to_group_color[mesh_id] = color
+
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot meshes with labels
+    for mesh_id, mesh in results_data.items():
+        # Plot the polygon
+        coords = np.array(mesh['original_coordinates'])
+        polygon = Poly3DCollection([coords], alpha=0.8)
+
+        # Determine face color based on group or radiance
+        if mesh_id in mesh_to_group_color:
+            polygon.set_facecolor(mesh_to_group_color[mesh_id])
+        else:
+            polygon.set_facecolor(cmap(norm(mesh['average_radiance'])))
+
+        ax.add_collection3d(polygon)
+
+        # Add mesh number label at centroid (existing code remains unchanged)
+        mesh_number = int(mesh_id.split('_')[1])
+        centroid = mesh['centroid']
+        """
+        ax.text(
+            centroid[0], centroid[1], centroid[2],
+            str(mesh_number),
+            color='white',
+            fontsize=9,
+            ha='center',
+            va='center',
+            bbox=dict(
+                boxstyle="round",
+                facecolor='black',
+                alpha=0.7,
+                edgecolor='none'
+            ),
+            zorder=4
+        )
+        """
+
+    # Configure axes and colorbar (existing code remains unchanged)
+    ax.set_xlabel('X Axis', fontsize=9)
+    ax.set_ylabel('Y Axis', fontsize=9)
+    ax.set_zlabel('Elevation', fontsize=9)
+    ax.grid(True)
+
+    # Add colorbar for radiance values (only affects non-grouped meshes)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    cbar = plt.colorbar(sm, ax=ax, pad=0.1)
+    cbar.set_label('Average Radiance (W/m²)', fontsize=10)
+
+    # Set viewing angle
+    ax.view_init(elev=45, azim=-45)
+    plt.tight_layout()
+    plt.show()
+
+
+"""
+def create_3d_visualization(results_data):
+    Generate 3D visualization of results
     radiances = [mesh['average_radiance'] for mesh in results_data.values()]
     norm = Normalize(vmin=min(radiances), vmax=max(radiances))
     cmap = plt.cm.viridis
@@ -495,14 +622,60 @@ def create_3d_visualization(results_data):
     plt.colorbar(sm, ax=ax, label='Average Radiance (W/m²)')
     plt.tight_layout()
     plt.show()
+"""
+
+def save_hourly_data_to_txt(simulation_results, output_dir="hourly_results"):
+    """Save hourly irradiance data for mesh pairs to text files."""
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Sort mesh IDs numerically
+    mesh_ids = sorted(simulation_results.keys(),
+                      key=lambda x: int(x.split('_')[1]))
+
+    # Group meshes in pairs
+    groups = []
+    for i in range(0, len(mesh_ids), 2):
+        pair = mesh_ids[i:i + 2]
+        group_name = f"Group_{i // 2 + 1}_Meshes_{'-'.join([m.split('_')[1] for m in pair])}"
+        groups.append((group_name, pair))
+
+    # Process each group
+    for group_name, mesh_pair in groups:
+        filename = os.path.join(output_dir, f"{group_name}_hourly.txt")
+
+        # Get common timestamps (assuming all meshes have same timestamps)
+        timestamps = list(simulation_results[mesh_pair[0]].keys())
+
+        with open(filename, 'w') as f:
+            # Write header
+            #f.write("Timestamp,Solar_Trace_kW_per_m2\n")
+
+            for ts in timestamps:
+                # Get values for all meshes in pair
+                values = []
+                for mesh_id in mesh_pair:
+                    values.append(simulation_results[mesh_id].get(ts, 0))
+
+                # Calculate average
+                avg_irradiance = (np.mean(values) * 0.2 /1000) if values else 0
+                #meshes_list = ','.join([m.split('_')[1] for m in mesh_pair])
+
+                # Write formatted line
+                iso_time = ts.isoformat()
+                #f.write(f"{iso_time},{avg_irradiance:.16f}\n")
+                f.write(f"{avg_irradiance:.16f}\n")
+        #print(f"Saved {filename} containing: {', '.join(mesh_pair)}")
+
 
 if __name__ == '__main__':
     """Main execution flow for solar potential analysis"""
     # Load configuration parameters
     CONVERSION_PARAMS = {
-    'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/BJ39_500_100047_0010.polyshape",
+    'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test2.txt",
     'earth_radius': 6378137.0,
-    'geo_centroid': (52.1986125198786, 0.11358089726501427),
+    #'geo_centroid': (52.19850723176565, 0.11353796391182779),
+    'geo_centroid':  (-69.3872203183979, -67.70319583227294),
     'unit_scaling': (1.0, 1.0, 1.0),
     'timezone': 'Europe/London',
     'panel_config': {
@@ -512,13 +685,15 @@ if __name__ == '__main__':
         'b_scale_x': 0.05,
         'b_scale_y': 0.05,
         'b_scale_z': 0.05,
-        'grid_size': 1.0            #so now, when I do the simulation, it is 1m^2 for each mesh grid
+        'exclude_face_indices': [2],
+        'grid_size': 2.0            #so now, when I do the simulation, it is 1m^2 for each mesh grid, if input is 1
+                                    #the triangular meshgrid is triangulated, so it should be 1/2 3/4... averaged between the 2
     },
     'simulation_params': {
-        'start': datetime.datetime(2023, 6, 10, 12, 0),
-        'end': datetime.datetime(2023, 6, 10, 13, 0),
+        'start': datetime.datetime(2023, 1, 1, 14, 0),
+        'end': datetime.datetime(2023,  1, 1, 15, 0),
         'resolution': 'hourly',
-        'shading_samples': 1     # when simulating the ray-tracing algo, the number of samples drawn
+        'shading_samples': 10     # when simulating the ray-tracing algo, the number of samples drawn
     },
     'visualization': {
         'face_color': plt.cm.viridis(0.5),
@@ -542,22 +717,38 @@ if __name__ == '__main__':
         solar_azimuth=0,
         solar_zenith=45
     )
+    """
 
     """
+    color_groups = [
+        ['Mesh_55', 'Mesh_56','Mesh_57', 'Mesh_58'],  # Group 1 (will be same color)
+        ['Mesh_51', 'Mesh_52', 'Mesh_53', 'Mesh_54'],
+        ['Mesh_45', 'Mesh_46', 'Mesh_47', 'Mesh_48'],
+    ]
+    """
+
 
     start_time = time.time()
 
     # Run a complete simulation
     building_data, solar_meshes = initialize_components(CONVERSION_PARAMS)
     simulation_results = run_complete_simulation(building_data, solar_meshes, CONVERSION_PARAMS)
+
+    save_hourly_data_to_txt(simulation_results)
+
     comprehensive_results = final_results(simulation_results, solar_meshes)
+    #create_3d_visualization(comprehensive_results)
+
+
+
+    #create_3d_visualization_1(comprehensive_results, color_groups)
     create_3d_visualization(comprehensive_results)
     print(comprehensive_results)
 
     end_time = time.time()
     print(f"Calculation time: {end_time - start_time:.4f} seconds")
 
-    """
+
     # To visualize hourly shading area of the building
     building_triangles = building_data['building_triangles']
     mesh_triangles_list = solar_meshes['mesh_triangles']
@@ -588,4 +779,4 @@ if __name__ == '__main__':
 
         plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith)
         plt.pause(0.1)  # Allows interactive viewing (optional)
-        """
+

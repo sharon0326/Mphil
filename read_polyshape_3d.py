@@ -169,7 +169,7 @@ def identify_rooftops(verts, faces):
         normal /= np.linalg.norm(normal)
 
         # Consider faces with normals pointing upward (Z > 0.5)
-        if abs(normal[2]) > 0.5:  # ~45 degree threshold, loose the criteria from 0.7, otherwise, not inclusive
+        if abs(normal[2]) > 0.3:  # ~45 degree threshold, loose the criteria from 0.7, otherwise, not inclusive
             roof_faces.append(face)
     
     return roof_faces
@@ -191,7 +191,7 @@ def plot_rooftops(verts, roof_faces):
 
 # Usage
 if __name__ == "__main__":
-    verts, faces = read_polyshape("C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test.txt")
+    verts, faces = read_polyshape("C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test2.txt")
 
     # Result verification
     print("Vertices shape:", verts.shape)

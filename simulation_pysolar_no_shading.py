@@ -205,7 +205,7 @@ if __name__ == '__main__':
     # Configuration
     # Scale factors assume decimeter
     CONVERSION_PARAMS = {
-        'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test.txt",
+        'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/BJ39_500_098051_0020.polyshape",
         'earth_radius': 6378137.0,  # WGS84 in meters
         'local_centroid': (12.516, 21.043),  # (x, y) in meters
         'geo_centroid': (52.1986125198786, 0.11358089726501427),  # (lat, lon)
@@ -251,8 +251,8 @@ if __name__ == '__main__':
 
     location_config = {
         'timezone': 'Europe/London',
-        'start_time': datetime.datetime(2023, 6, 10, 12, 0),
-        'end_time': datetime.datetime(2023, 6, 10, 14, 0),
+        'start_time': datetime.datetime(2023, 1, 1, 0, 0),
+        'end_time': datetime.datetime(2023, 12, 31, 23, 0),
         'time_base': 'hourly'
     }
 
