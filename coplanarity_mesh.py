@@ -413,7 +413,6 @@ class RoofSolarPanel:
                     (square_u_end, square_v_end),
                     (current_u, square_v_end)
                 ]
-                # ... rest of the code to check points ...
 
                 mid_top = ((current_u + square_u_end) / 2, current_v)
                 mid_bottom = ((current_u + square_u_end) / 2, square_v_end)
@@ -432,8 +431,6 @@ class RoofSolarPanel:
                     squares.append((current_u, current_v, square_u_end, square_v_end))
                 current_v += grid_size
             current_u += grid_size
-
-            # ... rest of the code ...
 
 
         mesh_squares = []
