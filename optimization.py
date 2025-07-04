@@ -5,9 +5,8 @@ from numpy import array
 import datetime
 from simulation_pvlib_buildingtri_shading import initialize_components, save_hourly_data_to_txt, \
     run_complete_simulation, final_results
-"""
-def pair_meshes_to_quads(meshes):
 
+def pair_meshes_to_quads(meshes):
     sorted_keys = sorted(meshes.keys(), key=lambda x: int(x.split('_')[1]))
     quads = {}
 
@@ -18,52 +17,11 @@ def pair_meshes_to_quads(meshes):
         key1, key2 = sorted_keys[i], sorted_keys[i + 1]
         mesh1, mesh2 = meshes[key1], meshes[key2]
 
-        # Combine and deduplicate vertices
-        combined_coords = mesh1['original_coordinates'] + mesh2['original_coordinates']
-        unique_coords = []
-        for pt in combined_coords:
-            if not any(np.allclose(pt, existing) for existing in unique_coords):
-                unique_coords.append(pt)
-
-        if len(unique_coords) != 4:
-            print(f"Warning: Pair {key1}, {key2} has {len(unique_coords)} points. Skipping.")
-            continue
-
-        # Calculate averaged properties
-        avg_radiance = (mesh1['average_radiance'] + mesh2['average_radiance']) / 2
-        centroid = np.mean(unique_coords, axis=0)
-
-        quad_key = f"Quad_{i // 2 + 1}"
-        quads[quad_key] = {
-            'coordinates': unique_coords,
-            'average_radiance': avg_radiance,
-            'centroid': centroid
-        }
-
-    return quads
-"""
-
-
-def pair_meshes_to_quads(meshes):
-    """Pairs adjacent triangular meshes into quadrilaterals with proper vertex deduplication."""
-    sorted_keys = sorted(meshes.keys(), key=lambda x: int(x.split('_')[1]))
-    quads = {}
-
-    for i in range(0, len(sorted_keys), 2):
-        if i + 1 >= len(sorted_keys):
-            break
-
-        key1, key2 = sorted_keys[i], sorted_keys[i + 1]
-        mesh1, mesh2 = meshes[key1], meshes[key2]
-
-        # Combine coordinates from both meshes
         combined_coords = np.vstack([mesh1['original_coordinates'],
                                      mesh2['original_coordinates']])
 
-        # Handle floating-point precision issues by rounding
         rounded_coords = np.round(combined_coords, decimals=8)
 
-        # Get unique coordinates while preserving original values
         _, unique_indices = np.unique(rounded_coords, axis=0, return_index=True)
         unique_coords = combined_coords[unique_indices].tolist()
 
@@ -71,11 +29,9 @@ def pair_meshes_to_quads(meshes):
             print(f"Pair {key1}-{key2}: Found {len(unique_coords)} unique points. Requires 4.")
             continue
 
-        # Calculate quad properties
         avg_radiance = (mesh1['average_radiance'] + mesh2['average_radiance']) / 2
         centroid = np.mean(unique_coords, axis=0)
 
-        # Order points in quadrilateral sequence
         ordered_coords = _order_quad_points(unique_coords)
 
         quads[f"Quad_{i // 2 + 1}"] = {
@@ -92,17 +48,13 @@ def _order_quad_points(points):
     # Convert to numpy array for calculations
     pts = np.array(points)
 
-    # Find center point
     center = np.mean(pts, axis=0)
 
-    # Calculate angles from center to sort points radially
     vectors = pts[:, :2] - center[:2]
     angles = np.arctan2(vectors[:, 1], vectors[:, 0])
 
-    # Sort points based on angles
     ordered_indices = np.argsort(angles)
 
-    # Return ordered points (ensure closed polygon)
     ordered = pts[ordered_indices].tolist()
     return ordered + [ordered[0]]  # Close the polygon if needed for visualization
 
@@ -111,23 +63,19 @@ def visualize_quads(quads):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Setup colormap
     radiances = [q['average_radiance'] for q in quads.values()]
     norm = plt.Normalize(min(radiances), max(radiances))
     cmap = plt.cm.viridis
 
-    # Plot each quadrilateral
     for quad in quads.values():
         poly = Poly3DCollection([quad['coordinates']],
                                 facecolor=cmap(norm(quad['average_radiance'])),
                                 edgecolor='k', alpha=0.8)
         ax.add_collection3d(poly)
 
-    # Configure plot
     ax.set(xlabel='X', ylabel='Y', zlabel='Z',
            title='3D Visualization of Quadrilateral Meshes')
 
-    # Add colorbar
     plt.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm),
                  ax=ax, label='Average Radiance', shrink=0.5)
 
@@ -137,17 +85,13 @@ def visualize_quads(quads):
 
 def optimize_panel_placement(quads, num_panels, quad_size, panel_length, panel_width):
     """Optimizes solar panel placement based on radiance values."""
-    # Prepare grid structure
     rows = _create_quad_rows(quads)
 
-    # Calculate panel dimensions in quad units
     quads_x = max(1, int(round(panel_length / quad_size)))
     quads_y = max(1, int(round(panel_width / quad_size)))
 
-    # Generate valid panels
     panels = _generate_valid_panels(rows, quads_x, quads_y)
 
-    # Select optimal non-overlapping panels
     selected = _select_optimal_panels(panels, num_panels)
 
     return _process_panels(selected)
@@ -159,11 +103,9 @@ def _create_quad_rows(quads):
                  for q in quads.values()]
     sorted_centroids = sorted(centroids, key=lambda c: (-c[1], c[0]))
 
-    # Calculate row grouping tolerance
     y_coords = [c[1] for c in sorted_centroids]
     epsilon = np.max(np.abs(np.diff(y_coords))) * 1.10
 
-    # Group into rows
     rows = []
     current_row = []
     previous_y = None
@@ -268,7 +210,6 @@ def visualize_quads_and_panels(quads, panels_data):
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Plot base quads
     radiances = [q['average_radiance'] for q in quads.values()]
     norm = plt.Normalize(min(radiances), max(radiances))
     cmap = plt.cm.viridis
@@ -279,7 +220,6 @@ def visualize_quads_and_panels(quads, panels_data):
                                 edgecolor='gray', alpha=0.4)
         ax.add_collection3d(poly)
 
-    # Plot panels
     colors = ['red', 'blue', 'orange', 'green', 'purple']
     for i, panel in enumerate(panels_data['panels']):
         for quad in panel['original_coordinates']:
@@ -300,8 +240,6 @@ def visualize_quads_and_panels(quads, panels_data):
 
 def run_optimization(meshes, panel_length, panel_width,num_panels):
     """Main function to be called from C++ with panel dimensions"""
-    # Hardcoded mesh data (truncated for brevity)
-
 
     quads = pair_meshes_to_quads(meshes)
     result = optimize_panel_placement(

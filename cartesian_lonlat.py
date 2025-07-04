@@ -124,7 +124,7 @@ if __name__ == "__main__":
     # Configuration
     # Scale factors assume decimeter
     CONVERSION_PARAMS = {
-        'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test.txt",
+        'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/BK39_500_012023_0006.polyshape",
         'earth_radius': 6378137.0,  # WGS84 in meters
         'geo_centroid': (52.1986125198786, 0.11358089726501427),  # (lat, lon)
         'unit_scaling': (1.0, 1.0, 1.0),  # (x, y, z) scale factors

@@ -1,6 +1,5 @@
 import datetime
 import time
-
 import pandas as pd
 import numpy as np
 from matplotlib.cm import ScalarMappable
@@ -15,14 +14,12 @@ import matplotlib.pyplot as plt
 
 def compute_centroid(triangle):
     """Calculate centroid with robust type checking"""
-    # Convert to numpy array if needed
     if not isinstance(triangle, np.ndarray):
         try:
             triangle = np.array(triangle, dtype=np.float64)
         except ValueError as e:
             raise ValueError(f"Invalid triangle structure: {triangle}") from e
 
-    # Verify triangle shape (3 vertices, 3 coordinates each)
     if triangle.shape != (3, 3):
         raise ValueError(f"Invalid triangle dimensions: {triangle.shape}. Should be (3,3)")
 
@@ -133,9 +130,10 @@ def create_mesh_coordinate_map(mesh_triangles):
         for idx, (geometry, mesh_idx) in enumerate(mesh_triangles)  # Unpack tuple here
     }
 
+
 def plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith):
     """
-    Visualizes 3D solar access analysis by plotting shaded and unshaded areas.
+    Visualizes 3D solar access analysis by plotting shaded and unshaded areas with compass.
 
     Parameters:
     - shaded (list of arrays): List of polygons representing shaded areas.
@@ -146,31 +144,30 @@ def plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith):
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Plot UNSHADED areas (green)
+    # Plot UNSHADED areas (yellow)
     if unshaded:
         unshaded_collection = Poly3DCollection(
             unshaded,
-            facecolors='#00ff00',  # Bright green
-            edgecolors='#003300',  # Dark green edges
+            facecolors='#ffff00',  # Yellow
+            edgecolors='#999900',  # Dark yellow edges
             linewidths=0.3,
             alpha=0.9,
             zorder=2
         )
         ax.add_collection3d(unshaded_collection)
 
-    # Plot SHADED areas (red) on top
+    # Plot SHADED areas (grey) on top
     if shaded:
         shaded_collection = Poly3DCollection(
             shaded,
-            facecolors='#ff3300',  # Bright orange-red
-            edgecolors='#660000',  # Dark red edges
+            facecolors='#b0b0b0',  # Grey
+            edgecolors='#505050',  # Darker grey edges
             linewidths=0.3,
             alpha=0.8,
             zorder=3
         )
         ax.add_collection3d(shaded_collection)
 
-    # Set axes limits based on combined points
     if shaded or unshaded:
         all_points = np.concatenate(shaded + unshaded) if shaded else np.concatenate(unshaded)
         min_vals = np.min(all_points, axis=0)
@@ -181,24 +178,21 @@ def plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith):
         ax.set_ylim(min_vals[1] - padding[1], max_vals[1] + padding[1])
         ax.set_zlim(min_vals[2] - padding[2], max_vals[2] + padding[2])
 
-    # Configure view and labels
     ax.view_init(elev=45, azim=-45)
-    ax.set_xlabel('X Axis', fontsize=10, labelpad=10)
-    ax.set_ylabel('Y Axis', fontsize=10, labelpad=10)
+    ax.set_xlabel('X Axis (East-West)', fontsize=10, labelpad=10)
+    ax.set_ylabel('Y Axis (North-South)', fontsize=10, labelpad=10)
     ax.set_zlabel('Elevation', fontsize=10, labelpad=10)
     ax.set_title(
         f'Solar Access Map\nAzimuth: {solar_azimuth}°, Zenith: {solar_zenith}°',
         fontsize=12, pad=15
     )
 
-    # Add legend
     legend_elements = [
-        plt.matplotlib.patches.Patch(facecolor='#00ff00', alpha=0.9, label='Direct Sunlight'),
-        plt.matplotlib.patches.Patch(facecolor='#ff3300', alpha=0.8, label='Shaded Areas')
+        plt.matplotlib.patches.Patch(facecolor='#ffff00', alpha=0.9, label='Direct Sunlight'),
+        plt.matplotlib.patches.Patch(facecolor='#b0b0b0', alpha=0.8, label='Shaded Areas')
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
 
-    # Optimize 3D rendering
     plt.tight_layout()
     ax.xaxis.set_pane_color((0.95, 0.95, 0.95))
     ax.yaxis.set_pane_color((0.95, 0.95, 0.95))
@@ -207,10 +201,10 @@ def plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith):
 
     plt.show()
 
+
 def simulate_period_with_shading(centroid, tilt, azimuth, mesh_triangles, building_triangles, current_idx, timezone_str,
                                  start_time, end_time, num_samples, time_base='hourly'):
     """Simulate solar flux for a mesh triangle considering shading from other meshes and buildings."""
-    # Set up location and site
     location = {
         'latitude': centroid[1],
         'longitude': centroid[0],
@@ -219,7 +213,6 @@ def simulate_period_with_shading(centroid, tilt, azimuth, mesh_triangles, buildi
     site = Location(location['latitude'], location['longitude'], tz=location['timezone'])
     triangle_geometry = mesh_triangles[current_idx]
 
-    # Generate time range
     start = pd.Timestamp(start_time).tz_localize(timezone_str)
     end = pd.Timestamp(end_time).tz_localize(timezone_str)
 
@@ -244,7 +237,6 @@ def simulate_period_with_shading(centroid, tilt, azimuth, mesh_triangles, buildi
     solar_pos = site.get_solarposition(times)
     clearsky = site.get_clearsky(times, model='ineichen', linke_turbidity=3.0)
 
-    # Precompute shading status for each time point
     shaded_mask = np.zeros(len(times), dtype=bool)
     for i, (ts, pos) in enumerate(solar_pos.iterrows()):
         solar_azimuth = pos['azimuth']
@@ -254,7 +246,6 @@ def simulate_period_with_shading(centroid, tilt, azimuth, mesh_triangles, buildi
         # Check if the current triangle is shaded at this time
         shaded_mask[i] = is_shaded(triangle_geometry, solar_dir, building_triangles, num_samples)
 
-    # Calculate irradiance for all timesteps
     poa = get_total_irradiance(
         surface_tilt=tilt,
         surface_azimuth=azimuth,
@@ -265,11 +256,9 @@ def simulate_period_with_shading(centroid, tilt, azimuth, mesh_triangles, buildi
         solar_azimuth=solar_pos['azimuth']
     )
 
-    # Apply shading mask (set shaded timesteps to zero)
     total_flux = poa['poa_global'].clip(lower=0)
     total_flux[shaded_mask] = 0
 
-    # Aggregate results based on time_base
     if time_base == 'hourly':
         aggregated = total_flux
     elif time_base == 'daily':
@@ -472,6 +461,41 @@ def final_results(raw_results, solar_meshes):
     return comprehensive_results
 
 
+def create_3d_visualization_with_color_scheme(results_data):
+    """Generate 3D visualization of results with fixed color scale (0-160 W/m²)"""
+    # Fixed color scale from 0 to 160 W/m²
+    norm = Normalize(vmin=0, vmax=160)
+    cmap = plt.cm.viridis
+
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    for mesh_id, mesh in results_data.items():
+        coords = np.array(mesh['original_coordinates'])
+        polygon = Poly3DCollection([coords], alpha=0.8)
+
+        # Use fixed color scale (0-160 range)
+        radiance_value = mesh['average_radiance']
+        polygon.set_facecolor(cmap(norm(radiance_value)))
+        ax.add_collection3d(polygon)
+
+    ax.set_xlabel('X Axis', fontsize=9)
+    ax.set_ylabel('Y Axis', fontsize=9)
+    ax.set_zlabel('Elevation', fontsize=9)
+    ax.grid(True)
+
+    # Add colorbar with fixed scale (0-160 W/m²)
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    cbar = plt.colorbar(sm, ax=ax, pad=0.1)
+    cbar.set_label('Average Radiance (W/m²)', fontsize=10)
+
+    cbar.set_ticks([0, 20, 40, 60, 80, 100, 120, 140, 160])
+
+    ax.view_init(elev=45, azim=-45)
+    plt.tight_layout()
+    plt.show()
+
+
 # For the clarity of the main. To debug, see try.pvlib_shaded_simulation
 def create_3d_visualization(results_data):
     #Generate 3D visualization of results with mesh labels.
@@ -527,103 +551,6 @@ def create_3d_visualization(results_data):
     plt.tight_layout()
     plt.show()
 
-
-def create_3d_visualization_1(results_data, color_groups=None):
-    # Generate 3D visualization of results with mesh labels and optional color groups
-    radiances = [mesh['average_radiance'] for mesh in results_data.values()]
-    norm = Normalize(vmin=min(radiances), vmax=max(radiances))
-    cmap = plt.cm.viridis
-
-    # Handle color groups
-    mesh_to_group_color = {}
-    if color_groups is not None:
-        group_cmap = plt.cm.get_cmap('tab10')  # Using qualitative colormap for groups
-        for group_idx, group in enumerate(color_groups):
-            color = group_cmap(group_idx % group_cmap.N)  # Cycle colors if needed
-            for mesh_id in group:
-                mesh_to_group_color[mesh_id] = color
-
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plot meshes with labels
-    for mesh_id, mesh in results_data.items():
-        # Plot the polygon
-        coords = np.array(mesh['original_coordinates'])
-        polygon = Poly3DCollection([coords], alpha=0.8)
-
-        # Determine face color based on group or radiance
-        if mesh_id in mesh_to_group_color:
-            polygon.set_facecolor(mesh_to_group_color[mesh_id])
-        else:
-            polygon.set_facecolor(cmap(norm(mesh['average_radiance'])))
-
-        ax.add_collection3d(polygon)
-
-        # Add mesh number label at centroid (existing code remains unchanged)
-        mesh_number = int(mesh_id.split('_')[1])
-        centroid = mesh['centroid']
-        """
-        ax.text(
-            centroid[0], centroid[1], centroid[2],
-            str(mesh_number),
-            color='white',
-            fontsize=9,
-            ha='center',
-            va='center',
-            bbox=dict(
-                boxstyle="round",
-                facecolor='black',
-                alpha=0.7,
-                edgecolor='none'
-            ),
-            zorder=4
-        )
-        """
-
-    # Configure axes and colorbar (existing code remains unchanged)
-    ax.set_xlabel('X Axis', fontsize=9)
-    ax.set_ylabel('Y Axis', fontsize=9)
-    ax.set_zlabel('Elevation', fontsize=9)
-    ax.grid(True)
-
-    # Add colorbar for radiance values (only affects non-grouped meshes)
-    sm = ScalarMappable(norm=norm, cmap=cmap)
-    cbar = plt.colorbar(sm, ax=ax, pad=0.1)
-    cbar.set_label('Average Radiance (W/m²)', fontsize=10)
-
-    # Set viewing angle
-    ax.view_init(elev=45, azim=-45)
-    plt.tight_layout()
-    plt.show()
-
-
-"""
-def create_3d_visualization(results_data):
-    Generate 3D visualization of results
-    radiances = [mesh['average_radiance'] for mesh in results_data.values()]
-    norm = Normalize(vmin=min(radiances), vmax=max(radiances))
-    cmap = plt.cm.viridis
-
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
-
-    for mesh in results_data.values():
-        coords = np.array(mesh['original_coordinates'])
-        polygon = Poly3DCollection([coords], alpha=0.8)
-        polygon.set_facecolor(cmap(norm(mesh['average_radiance'])))
-        ax.add_collection3d(polygon)
-
-    ax.set_xlabel('X Axis', fontsize=9)
-    ax.set_ylabel('Y Axis', fontsize=9)
-    ax.set_zlabel('Elevation', fontsize=9)
-
-    sm = ScalarMappable(norm=norm, cmap=cmap)
-    plt.colorbar(sm, ax=ax, label='Average Radiance (W/m²)')
-    plt.tight_layout()
-    plt.show()
-"""
-
 def save_hourly_data_to_txt(simulation_results, output_dir="hourly_results"):
     """Save hourly irradiance data for mesh pairs to text files."""
     import os
@@ -633,14 +560,12 @@ def save_hourly_data_to_txt(simulation_results, output_dir="hourly_results"):
     mesh_ids = sorted(simulation_results.keys(),
                       key=lambda x: int(x.split('_')[1]))
 
-    # Group meshes in pairs
     groups = []
     for i in range(0, len(mesh_ids), 2):
         pair = mesh_ids[i:i + 2]
         group_name = f"Group_{i // 2 + 1}_Meshes_{'-'.join([m.split('_')[1] for m in pair])}"
         groups.append((group_name, pair))
 
-    # Process each group
     for group_name, mesh_pair in groups:
         filename = os.path.join(output_dir, f"{group_name}_hourly.txt")
 
@@ -672,10 +597,13 @@ if __name__ == '__main__':
     """Main execution flow for solar potential analysis"""
     # Load configuration parameters
     CONVERSION_PARAMS = {
-    'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test2.txt",
+    'input_file': "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/single_segment.txt",
     'earth_radius': 6378137.0,
     #'geo_centroid': (52.19850723176565, 0.11353796391182779),
-    'geo_centroid':  (-69.3872203183979, -67.70319583227294),
+    #'geo_centroid':  (-69.3872203183979, -67.70319583227294),
+    'geo_centroid':  (52.1986125198786, 0.11358089726501427),
+    #'geo_centroid':(-40, 23.879985430205615),
+    #'geo_centroid': (40, 23.879985430205615),
     'unit_scaling': (1.0, 1.0, 1.0),
     'timezone': 'Europe/London',
     'panel_config': {
@@ -685,13 +613,13 @@ if __name__ == '__main__':
         'b_scale_x': 0.05,
         'b_scale_y': 0.05,
         'b_scale_z': 0.05,
-        'exclude_face_indices': [2],
-        'grid_size': 2.0            #so now, when I do the simulation, it is 1m^2 for each mesh grid, if input is 1
+        'exclude_face_indices': [],
+        'grid_size': 1.0            #so now, when I do the simulation, it is 1m^2 for each mesh grid, if input is 1
                                     #the triangular meshgrid is triangulated, so it should be 1/2 3/4... averaged between the 2
     },
     'simulation_params': {
-        'start': datetime.datetime(2023, 1, 1, 14, 0),
-        'end': datetime.datetime(2023,  1, 1, 15, 0),
+        'start': datetime.datetime(2023, 1, 1, 0, 0),
+        'end': datetime.datetime(2023,  12, 31, 23, 0),
         'resolution': 'hourly',
         'shading_samples': 10     # when simulating the ray-tracing algo, the number of samples drawn
     },
@@ -719,15 +647,6 @@ if __name__ == '__main__':
     )
     """
 
-    """
-    color_groups = [
-        ['Mesh_55', 'Mesh_56','Mesh_57', 'Mesh_58'],  # Group 1 (will be same color)
-        ['Mesh_51', 'Mesh_52', 'Mesh_53', 'Mesh_54'],
-        ['Mesh_45', 'Mesh_46', 'Mesh_47', 'Mesh_48'],
-    ]
-    """
-
-
     start_time = time.time()
 
     # Run a complete simulation
@@ -739,16 +658,14 @@ if __name__ == '__main__':
     comprehensive_results = final_results(simulation_results, solar_meshes)
     #create_3d_visualization(comprehensive_results)
 
-
-
-    #create_3d_visualization_1(comprehensive_results, color_groups)
     create_3d_visualization(comprehensive_results)
+    create_3d_visualization_with_color_scheme(comprehensive_results)
     print(comprehensive_results)
 
     end_time = time.time()
     print(f"Calculation time: {end_time - start_time:.4f} seconds")
 
-
+    """
     # To visualize hourly shading area of the building
     building_triangles = building_data['building_triangles']
     mesh_triangles_list = solar_meshes['mesh_triangles']
@@ -779,4 +696,6 @@ if __name__ == '__main__':
 
         plot_solar_access(shaded, unshaded, solar_azimuth, solar_zenith)
         plt.pause(0.1)  # Allows interactive viewing (optional)
+        """
+
 

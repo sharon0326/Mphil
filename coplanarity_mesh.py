@@ -5,6 +5,292 @@ import read_polyshape_3d
 import numpy as np
 from typing import List, Dict
 
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Rectangle, Polygon
+import matplotlib.patches as patches
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Rectangle, Polygon
+import matplotlib.patches as patches
+
+
+class FaceProjectionVisualizer:
+    """
+    Visualizes the 2D projection of roof faces and grid generation process
+    """
+
+    def __init__(self, roof_solar_panel):
+        self.roof = roof_solar_panel
+
+    def visualize_face_projection(self, face_index=0, grid_size=None):
+        """
+        Visualize the 2D projection of a specific roof face
+
+        Args:
+            face_index: Index of the roof face to visualize
+            grid_size: Grid size for mesh generation (uses roof's grid_size if None)
+        """
+        if face_index >= len(self.roof.roof_faces):
+            print(f"Face index {face_index} out of range. Available faces: 0-{len(self.roof.roof_faces) - 1}")
+            return
+
+        face = self.roof.roof_faces[face_index]
+        if grid_size is None:
+            grid_size = self.roof.grid_size
+
+        projection_data = self._get_face_projection_data(face, grid_size)
+
+        if projection_data is None:
+            print(f"Could not process face {face_index}")
+            return
+
+        self._plot_2d_projection(projection_data, face_index)
+
+    def visualize_all_faces(self, grid_size=None):
+        """
+        Visualize 2D projections of all roof faces in a grid layout
+        """
+        if grid_size is None:
+            grid_size = self.roof.grid_size
+
+        num_faces = len(self.roof.roof_faces)
+        if num_faces == 0:
+            print("No roof faces found")
+            return
+
+        # Calculate subplot layout
+        cols = min(3, num_faces)
+        rows = (num_faces + cols - 1) // cols
+
+        fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
+        if num_faces == 1:
+            axes = [axes]
+        elif rows == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+
+        for i in range(num_faces):
+            face = self.roof.roof_faces[i]
+            projection_data = self._get_face_projection_data(face, grid_size)
+
+            if projection_data is not None:
+                self._plot_2d_projection_on_axis(projection_data, i, axes[i])
+            else:
+                axes[i].text(0.5, 0.5, f'Face {i}\n(Cannot process)',
+                             ha='center', va='center', transform=axes[i].transAxes)
+                axes[i].set_title(f'Face {i}')
+
+        for i in range(num_faces, len(axes)):
+            axes[i].set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
+    def _get_face_projection_data(self, face, grid_size):
+        """
+        Extract 2D projection data for a face (similar to process_face method)
+        """
+        face_verts = [self.roof.V[i].tolist() for i in face]
+        normal = self.roof.compute_normal(face_verts)
+        if normal is None:
+            return None
+
+        # Find edges at minimum Z level
+        face_z = [v[2] for v in face_verts]
+        min_z = min(face_z)
+        edges = []
+        n = len(face)
+        for i in range(n):
+            current = face[i]
+            next_idx = face[(i + 1) % n]
+            a = self.roof.V[current]
+            b = self.roof.V[next_idx]
+            edges.append((a, b))
+
+        candidate_edges = [(a, b) for a, b in edges if a[2] == min_z and b[2] == min_z]
+        if not candidate_edges:
+            return None
+
+        # Set up coordinate system
+        A = np.array(candidate_edges[0][0])
+        B = np.array(candidate_edges[0][1])
+        u_vector = B - A
+        u_norm = np.linalg.norm(u_vector)
+        if u_norm < 1e-6:
+            return None
+        u_vector = u_vector / u_norm
+
+        v_vector = np.cross(normal, u_vector)
+        v_norm = np.linalg.norm(v_vector)
+        if v_norm < 1e-6:
+            return None
+        v_vector = v_vector / v_norm
+
+        # Project vertices to 2D
+        uv_coords = []
+        for idx in face:
+            vertex = np.array(self.roof.V[idx])
+            rel_vec = vertex - A
+            u = np.dot(rel_vec, u_vector)
+            v = np.dot(rel_vec, v_vector)
+            uv_coords.append((u, v))
+
+        u_coords = [u for u, v in uv_coords]
+        v_coords = [v for u, v in uv_coords]
+        u_min, u_max = min(u_coords), max(u_coords)
+        v_min, v_max = min(v_coords), max(v_coords)
+
+        # Generate grid squares
+        squares = []
+        all_squares = []  # Include invalid squares for visualization
+
+        current_u = u_min
+        while current_u < u_max:
+            current_v = v_min
+            while current_v < v_max:
+                square_u_end = min(current_u + grid_size, u_max)
+                square_v_end = min(current_v + grid_size, v_max)
+
+                # Calculate actual dimensions
+                u_length = square_u_end - current_u
+                v_length = square_v_end - current_v
+                min_dimension = grid_size * 0.3
+
+                square_info = {
+                    'bounds': (current_u, current_v, square_u_end, square_v_end),
+                    'valid_size': u_length >= min_dimension and v_length >= min_dimension,
+                    'inside': False
+                }
+
+                if square_info['valid_size']:
+                    # Check if square is inside polygon
+                    corners = [
+                        (current_u, current_v),
+                        (square_u_end, current_v),
+                        (square_u_end, square_v_end),
+                        (current_u, square_v_end)
+                    ]
+                    mid_top = ((current_u + square_u_end) / 2, current_v)
+                    mid_bottom = ((current_u + square_u_end) / 2, square_v_end)
+                    mid_left = (current_u, (current_v + square_v_end) / 2)
+                    mid_right = (square_u_end, (current_v + square_v_end) / 2)
+                    center = ((current_u + square_u_end) / 2, (current_v + square_v_end) / 2)
+                    check_points = corners + [mid_top, mid_bottom, mid_left, mid_right, center]
+
+                    all_inside = True
+                    for (u, v) in check_points:
+                        if not self.roof.point_in_polygon(u, v, uv_coords):
+                            all_inside = False
+                            break
+
+                    if all_inside:
+                        squares.append(square_info['bounds'])
+                        square_info['inside'] = True
+
+                all_squares.append(square_info)
+                current_v += grid_size
+            current_u += grid_size
+
+        return {
+            'uv_coords': uv_coords,
+            'bounds': (u_min, u_max, v_min, v_max),
+            'valid_squares': squares,
+            'all_squares': all_squares,
+            'grid_size': grid_size,
+            'face_verts_3d': face_verts
+        }
+
+    def _plot_2d_projection(self, data, face_index):
+        """
+        Plot the 2D projection with grid
+        """
+        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        self._plot_2d_projection_on_axis(data, face_index, ax)
+        plt.show()
+
+    def _plot_2d_projection_on_axis(self, data, face_index, ax):
+        """
+        Plot the 2D projection on a given axis
+        """
+        uv_coords = data['uv_coords']
+        u_min, u_max, v_min, v_max = data['bounds']
+        valid_squares = data['valid_squares']
+        all_squares = data['all_squares']
+        grid_size = data['grid_size']
+
+        polygon_x = [coord[0] for coord in uv_coords] + [uv_coords[0][0]]
+        polygon_y = [coord[1] for coord in uv_coords] + [uv_coords[0][1]]
+        ax.plot(polygon_x, polygon_y, 'k-', linewidth=2)
+
+        poly = Polygon(uv_coords, alpha=0.2, facecolor='lightblue', edgecolor='black')
+        ax.add_patch(poly)
+
+        vertex_x = [coord[0] for coord in uv_coords]
+        vertex_y = [coord[1] for coord in uv_coords]
+        ax.scatter(vertex_x, vertex_y, c='red', s=50, zorder=5)
+
+        for i, (x, y) in enumerate(uv_coords):
+            ax.annotate(f'V{i}', (x, y), xytext=(5, 5), textcoords='offset points', fontsize=8)
+
+        for square_info in all_squares:
+            start_u, start_v, end_u, end_v = square_info['bounds']
+            width = end_u - start_u
+            height = end_v - start_v
+
+            if square_info['inside']:
+                # Valid squares - green
+                color = 'green'
+                alpha = 0.3
+            elif square_info['valid_size']:
+                # Outside polygon but valid size - orange
+                color = 'orange'
+                alpha = 0.2
+            else:
+                # Too small - red
+                color = 'red'
+                alpha = 0.1
+
+            rect = Rectangle((start_u, start_v), width, height,
+                             linewidth=0.5, edgecolor='black',
+                             facecolor=color, alpha=alpha)
+            ax.add_patch(rect)
+
+        ax.set_aspect('equal')
+        ax.set_xlabel('U coordinate')
+        ax.set_ylabel('V coordinate')
+        ax.set_title(f'2D Projection of Face {face_index}\n'
+                     f'Grid Size: {grid_size:.1f}, Valid Squares: {len(valid_squares)}', fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        u_range = u_max - u_min
+        v_range = v_max - v_min
+        padding = max(u_range, v_range) * 0.1
+        ax.set_xlim(u_min - padding, u_max + padding)
+        ax.set_ylim(v_min - padding, v_max + padding)
+
+
+# Usage example function
+def visualize_roof_projections(roof_solar_panel, face_index=None):
+    """
+    Convenience function to visualize roof face projections
+
+    Args:
+        roof_solar_panel: RoofSolarPanel instance
+        face_index: Specific face to visualize (None for all faces)
+    """
+    visualizer = FaceProjectionVisualizer(roof_solar_panel)
+
+    if face_index is not None:
+        visualizer.visualize_face_projection(face_index)
+    else:
+        visualizer.visualize_all_faces()
+
+
+
+
 class RoofSolarPanel:
     """
     Attributes:
@@ -150,7 +436,8 @@ class RoofSolarPanel:
     def _generate_mesh(self):
         roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
         self.mesh_objects = [self.process_face(face, self.grid_size) for face in roof_faces]
-        return self.mesh_objects """
+        return self.mesh_objects 
+    """
 
 
     def plot_triangular_meshes(self):
@@ -160,14 +447,11 @@ class RoofSolarPanel:
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
 
-        # Extract all triangles from triangular_meshes
         triangles = [tri_data['triangle'] for tri_data in self.triangular_meshes]
 
-        # Create a Poly3DCollection and add to plot
         mesh = Poly3DCollection(triangles, alpha=0.5, edgecolor='k', facecolor='cyan')
         ax.add_collection3d(mesh)
 
-        # Set labels and viewing angle
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
@@ -206,17 +490,12 @@ class RoofSolarPanel:
         return V * scaling_matrix
 
     def display_building_and_rooftops(self):
-        # Identify rooftops from the faces
         roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.F)
-        # Plot the building
         read_polyshape_3d.plot_building(self.V, self.F)
-        # Plot the rooftops
         read_polyshape_3d.plot_rooftops(self.V, roof_faces)
 
     def display_building_and_rooftops_triangulated(self):
-        # Identify rooftops from the faces
         roof_faces = read_polyshape_3d.identify_rooftops(self.V, self.triangular_F)
-        # Plot the building
         read_polyshape_3d.plot_building(self.V, self.triangular_F)
 
     def adjust_vertices_to_plane(self, vertices, faces):
@@ -395,10 +674,8 @@ class RoofSolarPanel:
                 square_u_end = min(current_u + grid_size, u_max)
                 square_v_end = min(current_v + grid_size, v_max)
 
-                # Calculate actual dimensions of the square
                 u_length = square_u_end - current_u
                 v_length = square_v_end - current_v
-                # Define minimum allowed dimension (e.g., 10% of grid_size)
                 min_dimension = grid_size * 0.3  # Adjust this threshold as needed
 
                 # Skip squares that are too small in either dimension
@@ -406,7 +683,6 @@ class RoofSolarPanel:
                     current_v += grid_size
                     continue  # Skip this square
 
-                # Proceed with checking if points are inside the polygon
                 corners = [
                     (current_u, current_v),
                     (square_u_end, current_v),
@@ -467,7 +743,6 @@ class RoofSolarPanel:
             mesh_objects (List[List[List[float]]]): List of mesh squares for each face,
                                                     where each square is a list of 3D points.
         """
-        # can be added as arguments to the function
         roof_faces = self.roof_faces
         verts = self.V
         mesh_objects = self.mesh_objects
@@ -476,12 +751,10 @@ class RoofSolarPanel:
         ax = fig.add_subplot(111, projection='3d')
         ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], c='grey', alpha=0.3)
 
-        # Plot rooftop faces
         for face in roof_faces:
             poly = verts[face]
             ax.plot_trisurf(poly[:, 0], poly[:, 1], poly[:, 2], alpha=0.5, color='cyan', edgecolor='k')
 
-        # Plot mesh grid points
         for mesh in mesh_objects:
             for square in mesh:
                 square_points = np.array(square)
@@ -494,6 +767,7 @@ class RoofSolarPanel:
         plt.legend(loc='upper left', markerscale=2, fontsize=8)
         plt.show()
 
+
     def plot_rooftops_with_mesh_grid(self):
         """
         Plots the rooftop structure along with the generated mesh grid as quadrilaterals.
@@ -504,7 +778,6 @@ class RoofSolarPanel:
             mesh_objects (List[List[List[float]]]): List of mesh squares for each face,
                                                     where each square is a list of 3D points.
         """
-        # can be added as arguments to the function
         roof_faces = self.roof_faces
         verts = self.V
         mesh_objects = self.mesh_objects
@@ -512,13 +785,11 @@ class RoofSolarPanel:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
-        # Plot all vertices and rooftop faces
         ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], c='grey', alpha=0.3, label='Vertices')
         for face in roof_faces:
             poly = verts[face]
-            ax.plot_trisurf(poly[:, 0], poly[:, 1], poly[:, 2], alpha=0.5, color='cyan', edgecolor='k')
+            #ax.plot_trisurf(poly[:, 0], poly[:, 1], poly[:, 2], alpha=0.5, color='cyan', edgecolor='k')
 
-        # Plot the mesh grid as quadrilaterals
         for mesh in mesh_objects:
             for square in mesh:
                 square_points = np.array(square)
@@ -534,6 +805,53 @@ class RoofSolarPanel:
         plt.legend(loc='upper left', markerscale=2, fontsize=8)
         plt.show()
 
+
+    def plot_building_with_tri_mesh_grid(self):
+        """
+        Plots the entire building structure along with the generated mesh grid as quadrilaterals.
+        Shows triangulated lines only on mesh grid, not on roof segments.
+        """
+        verts = self.V
+        mesh_objects = self.mesh_objects
+        faces = self.F  # All building faces, not just roof faces
+
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(verts[:, 0], verts[:, 1], verts[:, 2], c='grey', alpha=0.3, s=10, label='Vertices')
+
+        for face in faces:
+            polygon = [verts[i] for i in face]
+            poly = Poly3DCollection([polygon], alpha=0.3, linewidths=0.5)
+            # Use light gray color for building to make it less prominent
+            poly.set_facecolor('cyan')
+            poly.set_edgecolor('k')
+            ax.add_collection3d(poly)
+
+        for mesh in mesh_objects:
+            for square in mesh:
+                square_points = np.array(square)
+                x = square_points[:, 0]
+                y = square_points[:, 1]
+                z = square_points[:, 2]
+                ax.plot_trisurf(x, y, z, color='blue', alpha=0.5,
+                                edgecolor='black')
+
+        min_vals = verts.min(axis=0)
+        max_vals = verts.max(axis=0)
+        ax.set_xlim(min_vals[0], max_vals[0])
+        ax.set_ylim(min_vals[1], max_vals[1])
+        ax.set_zlim(min_vals[2], max_vals[2])
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title("Building with Prominent Triangulated Mesh Grid")
+        ax.view_init(elev=60, azim=-30)
+
+        plt.legend(loc='upper left', markerscale=2, fontsize=8)
+        plt.show()
+
     def plot_building_with_mesh_grid(self):
         """
         Plots the 3D building with the generated mesh grid on top.
@@ -544,27 +862,26 @@ class RoofSolarPanel:
             mesh_objects (List[List[List[float]]]): List of mesh squares for each face,
                                                     where each square is a list of 3D points.
         """
-        # can be added as arguments to the function
         verts = self.V
         mesh_objects = self.mesh_objects
-        faces = self.F
+        faces = self.roof_faces
 
         fig = plt.figure(figsize=(12, 6))
         ax = fig.add_subplot(111, projection='3d')
 
-        # Plot each face of the building
         for face in faces:
             polygon = [verts[i] for i in face]
-            poly = Poly3DCollection([polygon], alpha=0.5, edgecolor='k', linewidths=1)
-            poly.set_facecolor(np.random.rand(3, ))
+            poly = Poly3DCollection([polygon], alpha=0.3, edgecolor='k', linewidths=1)
+            poly.set_facecolor('cyan')  # Changed from random colors to cyan
+            poly.set_edgecolor('k')
             ax.add_collection3d(poly)
 
-        # Plot the mesh grid as quadrilaterals
         for mesh in mesh_objects:
             for square in mesh:
                 square_points = np.array(square)
-                poly = Poly3DCollection([square_points], alpha=0.8, edgecolor='blue', linewidths=0.5)
+                poly = Poly3DCollection([square_points], alpha=0.5, edgecolor='black', linewidths=0.5)
                 poly.set_facecolor('blue')
+                poly.set_edgecolor('black')
                 ax.add_collection3d(poly)
 
         min_vals = verts.min(axis=0)
@@ -587,14 +904,12 @@ class RoofSolarPanel:
         - vertices: List of (x, y, z) tuples
         Returns: (centroid_x, centroid_y, ground_z) tuple
         """
-        # Find ground level (lowest Z)
         ground_z = min(v[2] for v in self.V)
         ground_verts = [v for v in self.V if v[2] == ground_z]
 
         if not ground_verts:
             raise ValueError("No ground vertices found")
 
-        # Calculate X/Y centroid coordinates
         centroid_x = sum(v[0] for v in ground_verts) / len(ground_verts)
         centroid_y = sum(v[1] for v in ground_verts) / len(ground_verts)
 
@@ -604,9 +919,9 @@ class RoofSolarPanel:
 if __name__ == "__main__":
     # Load vertices and faces from a .polyshape file
     verts, faces = read_polyshape_3d.read_polyshape(
-        "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/test2.txt"
+        "C:/Users/Sharon/Desktop/SGA21_roofOptimization-main/SGA21_roofOptimization-main/RoofGraphDataset/res_building/BK39_500_014034_0007.polyshape"
     )
-
+    #BK39_500_013033_0004
     #BK39_500_012023_0006.polyshape
 
     roof = RoofSolarPanel(
@@ -619,7 +934,7 @@ if __name__ == "__main__":
         b_scale_y=0.05,
         b_scale_z=0.05,
         grid_size= 1.0,
-        exclude_face_indices=[2]
+        exclude_face_indices=[]   # 2 for test 2   #9 for test
     )
     #print(roof.V)
     #print(roof.F)
@@ -628,8 +943,8 @@ if __name__ == "__main__":
     #roof.adjust_vertices_to_plane(roof.V, roof.F)
 
     # Display the building and rooftop seperately
-    roof.display_building_and_rooftops()
-    roof.display_building_and_rooftops_triangulated()
+    # roof.display_building_and_rooftops()
+    # roof.display_building_and_rooftops_triangulated()
     # print(roof.triangular_F)
 
     # The mesh object of the rooftop
@@ -639,16 +954,23 @@ if __name__ == "__main__":
     # roof.plot_rooftops_with_mesh_points()
 
     # display the rooftop with mesh grid
-    roof.plot_rooftops_with_mesh_grid()
+    roof.plot_building_with_tri_mesh_grid()
 
     # display the building with mesh grid
-    #roof.plot_building_with_mesh_grid()
+    # roof.plot_building_with_mesh_grid()
 
     #print(roof.mesh_objects)
     #print(roof.roof_faces)
 
     # get the centroid of the ground floor
     # print(roof.get_ground_centroid())
-    roof.plot_triangular_meshes()
-    #print(roof.triangular_meshes)
-    #print(roof.get_ground_centroid())
+    # roof.plot_triangular_meshes()
+    # print(roof.triangular_meshes)
+    # print(roof.get_ground_centroid())
+
+    # Then add these lines to visualize projections:
+    # visualizer = FaceProjectionVisualizer(roof)
+
+    # Visualize specific face (e.g., first roof face)
+    # visualizer.visualize_face_projection(0)
+    # visualizer.visualize_all_faces()
